@@ -1,0 +1,15 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local editor and operating system files
+.DS_Store
+.idea/
+.vscode/
+
+# Local environment variables
+.env
+.env.*
+!.env.example
