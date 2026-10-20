@@ -1,4 +1,4 @@
-"""第 1 层：定义真实迷宫，以及机器人逐步建立的已知地图。
+"""地图模块：定义真实迷宫，以及机器人逐步建立的已知地图。
 
 配合 README 第 5、9 节阅读；建议先读本文件，再读 planner.py。
 所有格子使用 (x, y) 坐标：左上角是 (0, 0)，向右 x 增加，向下 y 增加。
@@ -27,7 +27,8 @@ def neighbor(cell: Cell, direction: Direction) -> Cell:
     """把坐标加上方向，返回相邻格；本函数不检查结果是否越界。
 
     例如 neighbor((2, 3), (1, 0)) 返回 (3, 3)，即向东一格。
-    调用者还需要通过 contains() 或 edge_state() 判断那里能否通行。
+    调用者用 contains() 判断是否越界，用 edge_state() 查询这条边
+    是墙、通路还是未知；在地图内不代表两格之间一定能通行。
     """
     return cell[0] + direction[0], cell[1] + direction[1]
 
