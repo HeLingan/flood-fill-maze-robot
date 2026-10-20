@@ -1,6 +1,6 @@
 """组织机器人每一步的“感知 → 规划 → 移动”过程。
 
-建议结合 README 第 7 章的实际路线和第 11 章的状态表阅读。
+建议结合 README 第 7 节的实际路线和第 11 节的状态表阅读。
 maze.py 提供真实地图和已知地图，planner.py 负责计算距离；本文件把它们
 组合起来，决定机器人何时移动、移动到哪里、何时停止。
 
@@ -108,7 +108,9 @@ class Simulation:
             other = neighbor(self.position, direction)
             # 两个条件必须同时成立：① 当前边已探测为通路；② 邻居距离正好小 1。
             # UNKNOWN 只在规划中假定可走，不能作为实际跨越一条边的依据。
-            # and 会短路：边不开放时不再计算右侧条件；get() 查询不存在的坐标返回 None。
+            # and 会短路：边不开放时不再计算右侧条件；执行右侧时，边已确认 OPEN，
+            # 所以相邻格必然在图内。get() 对不存在的键默认返回 None 是一层保险，
+            # 并不是这里用来检测越界的手段；外边界已由 edge_state() 返回 WALL 阻止跨越。
             if (self.known.edge_state(self.position, direction) == OPEN
                     and self.distances.get(other) == current_distance - 1):
                 # 先检查是否回访，再写入集合，否则每一次都会被判断为“已经访问过”。
