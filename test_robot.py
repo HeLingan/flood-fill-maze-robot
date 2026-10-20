@@ -1,9 +1,10 @@
 """项目的自动测试；对应 README 第 14 节，不需要打开图形窗口。
 
-在项目文件夹运行 ``python3 -B -m unittest -v``（Windows 可用 ``py``
-代替 ``python3``）。``-B`` 不写入字节码缓存，``-v`` 显示各项测试名称。
+在项目文件夹运行 ``python3 -m unittest -v``（Windows 可用 ``py``
+代替 ``python3``）。``-v`` 显示各项测试名称；也可在 ``-m`` 前加上
+可选参数 ``-B``，表示不写入字节码缓存。
 unittest 会发现 RobotTests 中以 ``test_`` 开头的 10 个测试方法；辅助
-方法不会单独算作测试。后两项还包含 24 和 30 个固定随机地图案例。
+方法不会单独算作测试。后两项还包含 24 和 30 个固定随机种子子案例。
 
 测试的基本形式是“准备输入 → 运行被测代码 → 断言结果符合预期”。
 断言失败就说明某条约定没有满足，需要阅读失败位置，而不是删掉断言。
@@ -45,7 +46,7 @@ def actual_distances(maze):
         distance, cell = heapq.heappop(frontier)
         # 若曾为同一格加入较长候选，之后又找到了更短路径，较长候选
         # 可能还留在堆中。这种过期记录不能继续用于扩展；本项目的
-        # 等代价地图通常不会产生它，但这是 Dijkstra 的通用保护。
+        # 等代价图按此实现不会产生它，保留这个检查是 Dijkstra 的通用写法。
         if result[cell] != distance:
             continue
         x, y = cell
@@ -276,9 +277,12 @@ class RobotTests(unittest.TestCase):
                     flood_fill(known, goal)
 
     def test_fully_known_distances_match_independent_dijkstra(self):
-        """测试 9：在 24 张固定随机地图上，逐格比较 BFS 与 Dijkstra 距离。"""
+        """测试 9：用 24 个固定随机种子子案例，逐格比较 BFS 与 Dijkstra 距离。"""
         for seed in range(24):
-            # % 是取余；尺寸在 2～6 之间循环，墙概率覆盖全开到全封。
+            # % 是取余；尺寸和墙概率都由 seed % 5 选择，所以只会出现
+            # 5 对固定参数，并未覆盖所有尺寸与概率的组合。
+            # 概率为 0 的 5 个种子都生成同一张全开地图，概率为 1 的
+            # 4 个种子也都生成同一张全封地图；24 个案例不代表 24 张不同地图。
             size = 2 + seed % 5
             probability = (0.0, 0.15, 0.35, 0.6, 1.0)[seed % 5]
             with self.subTest(seed=seed, size=size, walls=probability):
@@ -294,7 +298,7 @@ class RobotTests(unittest.TestCase):
                 self.assertEqual(flood_fill(known, maze.goal), actual_distances(maze))
 
     def test_exploration_reaches_exactly_the_reachable_random_goals(self):
-        """测试 10：在 30 张固定随机地图上，探索结果应符合真实可达性。
+        """测试 10：用 30 个固定随机种子子案例，核对探索结果与真实可达性。
 
         这里保留机器人的正常局部感知流程，仅把最终成功或不可达与
         独立参照进行比较，不要求第一次探索路径等于真实最短路径。
@@ -302,6 +306,9 @@ class RobotTests(unittest.TestCase):
         # 记录案例是否同时包含“能到”和“不能到”，防止只测到一种情况。
         outcomes = set()
         for seed in range(30):
+            # 尺寸按 seed % 5 选择，概率按 seed % 6 选择；0～29 这
+            # 30 个种子恰好覆盖 5 × 6 种参数组合，每种组合一个案例。
+            # 这仍只是有限样例，不表示覆盖了每种参数下所有可能的地图。
             size = 2 + seed % 5
             probability = (0.05, 0.2, 0.35, 0.5, 0.75, 1.0)[seed % 6]
             with self.subTest(seed=seed, size=size, walls=probability):
