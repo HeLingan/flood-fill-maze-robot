@@ -1,92 +1,1188 @@
-# Flood Fill Maze Robot
+# 洪水填充法迷宫机器人：从零理解整个项目
 
-A small Python simulation of a robot exploring an unknown maze. The window shows the robot's map, its route, and the flood-fill distances to the goal.
+**Flood Fill Maze Robot** 是一个用 Python 编写的二维迷宫机器人模拟程序。机器人从左上角出发，边探测附近的墙壁，边计算到终点的距离，最终到达右下角；如果发现终点无法到达，就停止。
 
-This is a learning project developed with AI assistance. It uses a classical search algorithm, with no machine learning. It does not control a physical robot or simulate motors, sensor noise, or movement physics.
+这份 README 是一份可以配合源码学习的中文教程。即使你刚接触编程，也可以按照下面的顺序，完成“运行 → 观察 → 理解 → 修改 → 验证”。第一次不必记住所有语法，遇到不懂的地方可以回到对应章节。
 
-## Run
+项目使用经典的洪水填充寻路方法，具体通过 **从终点出发的广度优先搜索（BFS）** 实现。项目开发使用了 AI 辅助；程序本身没有机器学习模型，也不需要训练数据。它是离散网格模拟，没有连接实体小车，也没有模拟电机、真实传感器误差或运动惯性。
 
-You need Python 3 with a working Tkinter runtime and a desktop session. A modern Python/Tk build is recommended. No third-party Python packages or `pip install` commands are needed.
+## 阅读导航
 
-Open a terminal in this project folder. First check Tkinter:
+| 阶段 | 阅读内容 | 完成后你应该能做什么 |
+| --- | --- | --- |
+| 第一次：运行起来 | [1. 项目目标](#lesson-1) → [2. 安装与运行](#lesson-2) → [3. 使用界面](#lesson-3) | 自己启动程序，演示三种地图 |
+| 第二次：理解原理 | [4. 必要的 Python 基础](#lesson-4) → [5. 地图表示](#lesson-5) → [6. 洪水填充算法](#lesson-6) → [7. 运行实例](#lesson-7) | 用纸笔算距离，解释机器人为什么回头 |
+| 第三次：对照源码 | [8. 文件与调用关系](#lesson-8) → [9. maze.py](#lesson-9) → [10. planner.py](#lesson-10) → [11. simulator.py](#lesson-11) → [12. ui.py 与 main.py](#lesson-12) | 说清楚点击一次 Step 后执行了哪些代码 |
+| 第四次：自己动手 | [13. 无界面实验](#lesson-13) → [14. 自动测试](#lesson-14) → [15. 修改练习](#lesson-15) | 新建地图，修改一个参数，并验证结果 |
+| 遇到问题时 | [16. 排错](#lesson-16) → [17. 自测与项目介绍](#lesson-17) → [18. 延伸阅读](#lesson-18) | 独立定位常见错误，准确介绍自己的理解与贡献 |
+
+文中的代码块分成两类：标有“完整实验”的代码可以保存成文件直接运行；解释某一行代码的短片段用于对照阅读，不一定能单独运行。终端命令要输入到终端，Python 代码要写进 `.py` 文件，二者不要混在一起。
+
+<a id="lesson-1"></a>
+## 1. 这个项目到底要完成什么
+
+把迷宫想成一张方格纸。机器人一次只移动一格，可以向东、南、西、北移动，不能斜着走，也不能穿墙。
+
+程序需要解决四件事：
+
+1. **感知**：当前位置的四个方向，哪些有墙，哪些能走？
+2. **记录**：把刚发现的情况写入机器人的地图。
+3. **规划**：根据当前地图，计算每一格到终点还需要多少步。
+4. **行动**：选择一个能走、距离又更小的相邻格，移动过去。
+
+然后重复这一过程。
+
+机器人开始时知道网格大小、起点、终点和最外圈边界，但**不知道内部墙壁在哪里**。因此它有时会先走进死路，发现新墙后再返回。这正是本项目要演示的过程。
+
+当前版本的规则如下：
+
+| 项目 | 当前规则 |
+| --- | --- |
+| 自带地图 | 8 × 8，共 64 格 |
+| 起点 | `(0, 0)`，左上角 |
+| 终点 | `(7, 7)`，右下角 |
+| 一次移动的代价 | 1 步；转向没有额外代价 |
+| 感知范围 | 当前格的四条边，且感知完全准确 |
+| 未知区域 | 规划时暂时按可通行处理 |
+| 实际移动 | 只能跨越已经探测为可通行的边 |
+| 多条路线一样好时 | 按东 → 南 → 西 → 北的顺序选择 |
+| 停止条件 | 到达终点，或者已知墙壁足以证明终点不可达 |
+
+**这里的“机器人”是一组状态加一套决策程序。** 蓝色三角形是这些状态在屏幕上的表示。我们先学会如何组织感知、地图、规划和行动，再考虑更复杂的真实设备。
+
+<a id="lesson-2"></a>
+## 2. 从下载到第一次运行
+
+### 2.1 先认识几个名称
+
+- **GitHub 仓库**：存放项目文件和修改记录的地方。本项目地址为 [HeLingan/flood-fill-maze-robot](https://github.com/HeLingan/flood-fill-maze-robot)。
+- **Python**：运行这些代码的编程语言及其解释器。安装编辑器不等于安装了 Python。
+- **`.py` 文件**：保存 Python 源代码的文本文件。
+- **终端**：输入命令并查看文字输出的窗口。Windows 可以用 PowerShell；macOS 可以用“终端”。
+- **Tkinter**：本项目使用的 Python 图形界面模块；它还需要对应的 Tcl/Tk 运行环境。
+- **当前目录**：终端目前所在的文件夹。运行命令时，程序会以这个位置寻找文件。
+
+### 2.2 下载项目：可以先不学 Git
+
+1. 打开上面的 GitHub 仓库。
+2. 点击绿色的 **Code** 按钮，选择 **Download ZIP**。
+3. 解压下载的 ZIP。
+4. 打开解压后的文件夹，确认里面可以直接看到 `main.py`、`maze.py` 和 `README.md`。
+
+不要在压缩包内部直接运行，也不要只下载 `main.py`。这些 Python 文件需要放在同一个文件夹中。
+
+如果你已经安装并了解 Git，也可以在终端运行：
+
+```sh
+git clone https://github.com/HeLingan/flood-fill-maze-robot.git
+cd flood-fill-maze-robot
+```
+
+`git clone` 的意思是下载一个带版本记录的项目副本。刚开始学习时，用 ZIP 就够了；运行这个公开项目不需要 GitHub 登录，也不需要 API 密钥。
+
+### 2.3 准备 Python
+
+建议使用带 Tk 支持的现代 Python 3 安装，例如 [Python 官方下载页面](https://www.python.org/downloads/)提供的对应系统安装包。本项目的核心测试曾在 Python 3.9.6 和 3.12.14 下通过；实际图形窗口及控件流程在 Python 3.12.14 / Tk 9.0.4 下验证过。这些是已验证的环境，不代表所有系统组合都已测试。
+
+安装后关闭旧终端，再打开一个新终端，检查版本：
+
+**Windows：**
+
+```powershell
+py --version
+```
+
+**macOS / Linux：**
+
+```sh
+python3 --version
+```
+
+如果 Windows 上没有 `py`，但 `python --version` 能显示 Python 3 的版本，可以把本教程 Windows 命令中的 `py` 换成 `python`。后续应始终使用同一个解释器命令。
+
+本项目只使用 Python 标准库，没有 `requirements.txt`，不需要运行 `pip install -r requirements.txt`。Tkinter 是否可用取决于你的 Python 安装；**不要通过 `pip install tkinter` 来解决 Tk 缺失问题**，应使用包含 Tk 的 Python 安装或按发行版说明安装 Tk 支持。
+
+### 2.4 让终端进入项目文件夹
+
+`cd` 是“切换目录”的意思。下面的路径是示例，需要替换成你自己解压项目的位置；路径中有空格时，保留引号。
+
+**Windows 示例：**
+
+```powershell
+cd "C:\Users\你的用户名\Downloads\flood-fill-maze-robot-main"
+dir
+```
+
+**macOS 示例：**
+
+```sh
+cd "$HOME/Downloads/flood-fill-maze-robot-main"
+ls
+```
+
+Linux 同样使用 `cd` 和 `ls`，改成实际解压路径即可。`dir` 或 `ls` 的输出中应该能看见 `main.py`。
+
+### 2.5 先测试窗口环境，再运行项目
+
+**Windows：**
+
+```powershell
+py -m tkinter
+```
+
+关闭弹出的 Tk 测试窗口，再运行：
+
+```powershell
+py main.py
+```
+
+**macOS / Linux：**
 
 ```sh
 python3 -m tkinter
 ```
 
-A small test window should appear. Close it, then start the simulation:
+关闭测试窗口，再运行：
 
 ```sh
 python3 main.py
 ```
 
-If Tkinter is missing, use a Python installation that includes Tk support. An old Apple Tk 8.5 runtime produced a blank window during development on macOS. If the window is blank, try a current Python/Tk build and repeat the Tkinter check.
+`-m tkinter` 表示“运行 tkinter 模块自带的测试入口”；`main.py` 则是“执行当前项目的启动文件”。Python 官方也用这个小窗口作为 [Tkinter 安装检查方法](https://docs.python.org/3/library/tkinter.html)。
 
-## Controls
+成功时，会出现标题为 **Flood Fill Maze Robot** 的窗口。程序运行期间，终端没有新的命令提示符是正常的；关闭窗口后，终端会继续接受命令。
 
-- **Maze:** choose `open`, `detour`, or `blocked`. Changing the maze resets the simulation.
-- **Step:** move one cell, sense the new cell, and update the distances.
-- **Run / Pause:** start or pause automatic steps.
-- **Reset:** return to the start with a fresh map.
+如果只看到黑色或空白窗口，或者提示没有 Tkinter，先看[排错章节](#lesson-16)。开发时，macOS 自带的旧 Apple Tk 8.5 曾出现空白窗口；仅仅能导入 `tkinter`，并不保证当前环境能正常显示窗口。
 
-The blue triangle is the robot. Pale blue cells have been visited. `G` marks the goal. Dark lines are known walls, and dotted lines are unknown edges. Numbers show the current estimated distance to `G`; `∞` means no route exists in the current map.
+<a id="lesson-3"></a>
+## 3. 第一次使用：先看懂机器人在做什么
 
-## How it works
+### 3.1 按钮与画面
 
-The robot knows the maze size, outer boundaries, start, and goal. Internal edges begin as **unknown**. An ideal sensor reveals only the four edges of the robot's current cell. The planner and display use this discovered map, not the hidden wall layout.
+| 界面文字或标记 | 中文含义 |
+| --- | --- |
+| `Maze` | 选择地图，选择后会自动重置 |
+| `Step` | 单步：最多移动一格，然后感知并更新距离 |
+| `Run` / `Pause` | 自动运行 / 暂停；正常情况下每约 500 毫秒走一步 |
+| `Reset` | 回到起点，清空之前探索得到的地图和轨迹 |
+| 蓝色三角形 | 机器人当前所在位置；尖端表示朝向 |
+| 浅蓝色格子 | 已经访问过的格子 |
+| 浅蓝色线 | 历史移动轨迹，重复经过时可能重叠 |
+| 绿色 `G` | 目标格，Goal |
+| 深色粗线 | 已知墙壁，包括外边界 |
+| 浅色虚线 | 还没有探测的边，**不表示那里一定有墙** |
+| 没有画线的边 | 已探测为可通行的边 |
+| 格子中的数字 | 按当前地图估计，从该格到终点需要的最少步数 |
+| `∞` | 该格在当前规划地图中不能到达终点；程序内部存为 `None` |
+| `Steps` | 总移动次数，走回头路也计数 |
+| `Visited` | 访问过的不同格子数，重复经过同一格不会重复计数 |
+| `Exploring` | 仍在探索 |
+| `Goal reached` | 已到达终点 |
+| `Goal unreachable` | 已知墙壁足以证明终点不可达 |
 
-After each observation:
+窗口初始显示 `Steps: 0`、`Visited: 1/64`，因为机器人已经在起点上，并且已经探测了起点的四条边。`Reset` 后也会重新执行这次起点感知，不是完全没有信息的空白状态。
 
-1. Record the four local edges as open or wall.
-2. Treat unknown edges as open for planning.
-3. Run breadth-first search (BFS) backwards from the goal to calculate a distance for each cell.
-4. Move through a sensed-open edge to a cell whose distance is one smaller.
-5. Sense again and recalculate the complete distance field.
+### 3.2 按顺序体验三张地图
 
-Each move costs one. Movement is limited to east, south, west, and north, in that order when several choices have the same distance. There are no diagonal moves or turn costs.
+| 选择 | 建议怎么观察 | 当前固定规则下的结果 |
+| --- | --- | --- |
+| `open` | 先按几次 Step，再按 Run；观察数字如何降低 | 14 步到达终点 |
+| `detour` | 尽量用 Step；重点看第 12 步和后面的回头路 | 26 步到达终点，发生 6 次回访 |
+| `blocked` | 运行到停止，观察终点附近的墙与 `∞` | 移动 15 步后报告不可达 |
 
-Treating unknown edges as open makes the distances optimistic. New walls can increase them and force the robot to backtrack. The first exploration route is **not necessarily the globally shortest route**. BFS gives shortest distances on the current optimistic map; it gives the true shortest distances when the full map is known.
+`blocked` 的 15 步是**判断不可达之前已经移动的步数**，不是“到终点的距离”。
 
-The robot stops when it reaches the goal, or when observed walls prove that no route to the goal exists even with all remaining unknown edges treated as open.
+试一下：运行途中点击 Pause，确认机器人不再前进；点击 Reset，确认步数回到 0；更换地图，确认旧轨迹消失。程序到达终点或判定不可达后，Step 和 Run 会禁用，仍然可以重置或更换地图。
 
-## Included mazes
+<a id="lesson-4"></a>
+## 4. 阅读源码前需要的 Python 基础
 
-All three presets use an 8 × 8 grid. With the fixed direction order above:
+这一节解释本项目实际出现的语法。先理解含义，再到源码里找到对应位置。
 
-| Preset | What it demonstrates | Result | Moves |
-| --- | --- | --- | ---: |
-| `open` | No internal walls | Goal reached | 14 |
-| `detour` | A hidden dead end and backtracking | Goal reached | 26 |
-| `blocked` | An enclosed goal | Goal reported unreachable | 15 |
+### 4.1 变量、类型、判断与缩进
 
-The last row counts moves made before stopping, not a path to the goal.
+```python
+steps = 0
+status = "exploring"
+running = False
+```
 
-## Tests
+`steps` 保存整数；`status` 保存字符串；`running` 保存布尔值，只有 `True` 和 `False` 两种。`=` 是赋值，`==` 才是比较是否相等。
 
-Run the tests from this folder:
+```python
+if status == "exploring":
+    steps += 1
+```
+
+这表示“如果还在探索，就把步数加 1”。`steps += 1` 等价于 `steps = steps + 1`。冒号后面的缩进代码属于这个条件；Python 依赖缩进表示层级，本项目使用四个空格。
+
+`None` 表示“没有一个具体值”。它不同于数字 0：终点的距离是 0，不可达的距离用 `None`。因此代码用 `is None` 检查它，而不会把 0 当成不可达。
+
+### 4.2 元组、列表、集合和字典分别做什么
+
+| 写法 | 类型 | 本项目的用途 |
+| --- | --- | --- |
+| `(2, 3)` | 元组 `tuple`，一组不可原地修改的元素 | 一个格子的坐标 |
+| `[(0, 0), (1, 0), (0, 0)]` | 列表 `list`，有顺序，允许重复 | 完整的移动轨迹 `path` |
+| `{(0, 0), (1, 0)}` | 集合 `set`，元素不重复 | 访问过的不同格子 `visited` |
+| `{(0, 0): 14, (1, 0): 13}` | 字典 `dict`，用键查值 | 每个格子对应的距离 `distances` |
+
+```python
+position = (2, 3)
+x = position[0]       # 2：第一个元素的下标是 0
+y = position[1]       # 3
+x, y = position      # 也可以一次拆出两个元素，叫“解包”
+```
+
+```python
+path = [(0, 0)]
+path.append((1, 0))   # 把新位置追加到末尾
+visited = {(0, 0)}
+visited.add((1, 0))   # 加入集合
+visited.add((1, 0))   # 已经存在，所以集合大小不会再增加
+```
+
+`len(path)` 取得列表长度；`other in visited` 检查一个格子是否已经访问过。
+
+```python
+distances = {(0, 0): 14}
+print(distances[(0, 0)])        # 14
+print(distances.get((2, 2)))   # None：这个键不存在
+```
+
+`字典[键]` 要求键存在，否则会报 `KeyError`；`.get(键)` 可以在键不存在时返回默认值。`self._edges.get(key, UNKNOWN)` 中显式指定了默认值 `UNKNOWN`。
+
+源码中的 `frozenset(...)` 是不可修改的集合，适合保存一张固定地图的真实墙壁。机器人的 `visited` 则使用普通集合，因为探索时需要不断增加元素。
+
+### 4.3 函数、参数和返回值
+
+```python
+def neighbor(cell, direction):
+    return cell[0] + direction[0], cell[1] + direction[1]
+```
+
+- `def` 定义一个函数。
+- `cell` 和 `direction` 是调用函数时传进来的参数。
+- `return` 把计算结果交还给调用它的代码。
+- `neighbor((2, 3), (1, 0))` 会返回 `(3, 3)`，即向东相邻的一格。
+
+函数不是写到那里就自动执行；只有被调用时才运行它的函数体。文件顶层的导入、常量赋值、类定义等则在模块第一次导入时执行。
+
+### 4.4 类、对象、self 与方法
+
+```python
+sim = Simulation(PRESETS["open"])
+sim.step()
+print(sim.position)
+```
+
+可以把 `Simulation` 理解为“模拟器的设计说明”，`sim` 是根据这份说明创建出的一个具体模拟器对象。
+
+- `__init__` 是创建对象时调用的初始化方法，用于设置初始状态。
+- `self` 指向“当前这个对象”。`self.position` 保存它自己的位置。
+- 定义在类里面的函数通常叫“方法”。`sim.step()` 调用这个对象的方法。
+- `Simulation` 负责机器人运行；`MazeApp` 负责窗口。它们是两个不同职责的类。
+
+以下两行有很大区别：
+
+```python
+sensor = maze.sense          # 保存一个可调用的方法，现在还没有感知
+observation = sensor((0, 0)) # 调用这个方法，得到起点周围的观测
+```
+
+`Simulation` 中的 `self._sense = maze.sense` 就是在保存感知方法，之后通过它取得局部信息。以 `_` 开头的名字表示“主要供内部使用”的约定，不是密码保护或强制访问隔离。
+
+### 4.5 循环、continue、短路判断
+
+```python
+for direction in DIRECTIONS:
+    # 按固定顺序逐个检查方向
+    pass
+```
+
+`for` 遍历一组元素；`while queue:` 表示“只要队列不为空，就继续循环”。`continue` 跳过当前这一轮，继续检查下一个元素；`break` 则退出整个循环。
+
+```python
+if edge_is_open and distance_is_smaller:
+    # 两个条件都成立才行动
+    pass
+```
+
+`and` 表示同时满足，`or` 表示至少一个成立。它们会“短路”：`and` 左边已经为假时，不再计算右边；`or` 左边已经为真时，不再计算右边。这在检查地图边界时很有用。
+
+### 4.6 阅读时常见的简写
+
+| 语法 | 怎么理解 |
+| --- | --- |
+| `from maze import Maze` | 从同文件夹的 `maze.py` 中导入 `Maze` |
+| `from collections import deque` | 从 Python 标准库导入队列工具 |
+| `# ...` | 注释，不作为程序指令执行 |
+| `"""..."""` | 源码中的多行说明，常用作模块、类或函数的文档字符串 |
+| `-> bool`、`: Cell` | 类型提示，帮助读者和工具理解数据含义；不是自动输入检查 |
+| `Optional[int]` | 可以是整数，也可以是 `None` |
+| `range(8)` | 依次给出 0 到 7，不包含 8 |
+| `{(x, y): None for ...}` | 字典推导式，用循环生成一张字典 |
+| `lambda event: self._reset()` | 定义一个很短的函数，收到事件后调用重置 |
+| `raise ValueError("...")` | 遇到不合法输入时主动报告错误 |
+| `try` / `except` | 尝试执行代码，并处理指定类型的异常 |
+| `"Steps: {}".format(steps)` | 把变量填进文字中的占位符 |
+
+不必现在就熟练写出所有简写。先能把关键语句用中文解释出来，就可以继续往下读。
+
+<a id="lesson-5"></a>
+## 5. 迷宫怎样变成程序中的数据
+
+### 5.1 坐标是 `(x, y)`，不是 `(行, 列)`
+
+本项目使用屏幕坐标：`x` 向右增加，`y` 向下增加。
+
+```text
+           x 向右增加 →
+       (0,0)  (1,0)  (2,0)
+ y     (0,1)  (1,1)  (2,1)
+ 向下  (0,2)  (1,2)  (2,2)
+ 增加
+  ↓
+```
+
+对于 8 × 8 地图，合法坐标必须满足 `0 <= x < 8` 且 `0 <= y < 8`。所以最后一格是 `(7, 7)`，不是 `(8, 8)`。
+
+方向也用元组表示，它表示坐标要发生的变化：
+
+| 方向 | 方向元组 | 从 `(2, 3)` 出发 |
+| --- | --- | --- |
+| 东 / 右 | `(1, 0)` | `(3, 3)` |
+| 南 / 下 | `(0, 1)` | `(2, 4)` |
+| 西 / 左 | `(-1, 0)` | `(1, 3)` |
+| 北 / 上 | `(0, -1)` | `(2, 2)` |
+
+### 5.2 墙在两个格子之间
+
+这个项目不是“把整个格子设置成障碍物”。格子仍然存在，墙表示两个相邻格子之间不能通过。
+
+```python
+edge_key((0, 0), (1, 0))
+```
+
+这个表达式表示 `(0, 0)` 和 `(1, 0)` 的公共边。如果把它放进墙集合，机器人就不能直接从这两格之间穿过去，但仍可能从别的方向绕到另一格。
+
+从 A 看向 B 和从 B 看向 A，应该说的是同一条边。`edge_key()` 会把两个端点按统一顺序排列，防止程序一边认为有墙、另一边却认为没有墙。
+
+只有上下左右相邻的两个格子才能构成这里的一条边。`(0, 0)` 与 `(1, 1)` 是对角关系，不能拿来定义一堵墙。外边界自动由代码处理，不需要手动把边界墙加入内部墙集合。
+
+### 5.3 为什么需要两张地图
+
+| 对象 | 保存什么 | 谁使用它 |
+| --- | --- | --- |
+| `Maze` | 真实、完整的内部墙布局 | 模拟世界和理想传感器 |
+| `KnownMaze` | 机器人已经探测到的边，以及还未知的边 | 寻路算法和界面绘制 |
+
+这是项目最重要的区别。开发者在源码里定义完整地图，是为了让模拟世界存在；机器人决策不能直接拿完整地图来走。
+
+```mermaid
+flowchart LR
+    A[真实地图 Maze] -->|当前位置的四条边| B[局部感知 sense]
+    B --> C[机器人地图 KnownMaze]
+    C --> D[洪水填充 flood_fill]
+    D --> E[各格距离 distances]
+    E --> F[选择一步并更新位置]
+    F --> B
+    C --> G[界面绘制]
+    E --> G
+```
+
+机器人的地图中，一条边有三种状态：
+
+- `UNKNOWN` / `"unknown"`：还没有探测，不能说它真的通，也不能说它真的堵。
+- `OPEN` / `"open"`：已经探测为可通行。
+- `WALL` / `"wall"`：已经探测为有墙。
+
+每次感知当前格时，四条边都会被确认。另一端格子即使还没走进去，这条公共边也已经是已知的；“没访问过某格”和“它周围所有边都未知”并不等价。
+
+<a id="lesson-6"></a>
+## 6. 洪水填充法：从终点向外标数字
+
+### 6.1 先用纸笔算一个 3 × 3 的空地图
+
+把终点放在右下角。如果你已经站在终点，还需要走几步？答案是 0。
+
+与终点相邻、没有墙阻挡的格子标 1；再向外一层标 2；继续扩散，得到：
+
+```text
+4  3  2
+3  2  1
+2  1  0  ← 终点
+```
+
+这里的数字表示“从这个格子到终点最少还要走几步”，不是“机器人已经走了几步”，也不是障碍物数量。
+
+从左上角出发，沿着 `4 → 3 → 2 → 1 → 0` 走就能到终点。若有多个相邻格都满足条件，本项目按东、南、西、北顺序选第一个，因此在这张空地图上会先向右走。
+
+“洪水”只是形容数字一圈圈向外扩散。本项目不会模拟真实水流。
+
+### 6.2 BFS 为什么需要队列
+
+**BFS** 是 Breadth-First Search，中文是“广度优先搜索”。这里从终点开始，先处理距离 0 的格子，再处理距离 1 的格子，再处理距离 2 的格子。
+
+为了保持这个顺序，程序使用**先进先出队列**：先排队的先处理，新发现的格子排到队尾。
+
+```python
+from collections import deque
+
+queue = deque([(2, 2)])
+cell = queue.popleft()  # 从队头取走最早加入的格子
+queue.append((1, 2))   # 把新发现的格子加入队尾
+```
+
+在刚才的 3 × 3 示例中：
+
+| 处理哪个格子 | 新发现哪些格子及其距离 | 处理后的队列 |
+| --- | --- | --- |
+| `(2, 2)`，距离 0 | `(1, 2)` 与 `(2, 1)`，距离 1 | `[(1, 2), (2, 1)]` |
+| `(1, 2)`，距离 1 | `(0, 2)` 与 `(1, 1)`，距离 2 | `[(2, 1), (0, 2), (1, 1)]` |
+| `(2, 1)`，距离 1 | `(2, 0)`，距离 2；`(1, 1)` 已标记，不重复加入 | `[(0, 2), (1, 1), (2, 0)]` |
+
+每跨一条可通行的边都只增加 1。因此第一次给某格标上数字时，就找到了当前规划地图中到终点的最少步数。如果以后让不同路段的代价不同，不能直接沿用“首次遇到就确定最短距离”的这个结论。
+
+### 6.3 墙和未知边怎样处理
+
+- 遇到已知墙壁：扩散不能越过它。
+- 遇到已知通路：允许扩散。
+- 遇到未知边：**暂时允许扩散**。
+
+第三条叫“乐观假设”：先假设未知区域有机会走通，再通过移动与感知验证它。
+
+这并不意味着机器人会直接穿过未知边。规划时可以假设远处能通；实际行动时，当前格的四边已经感知过，`step()` 还会明确检查这条边必须是 `OPEN`，才允许移动。
+
+### 6.4 为什么发现新墙后要重新计算
+
+原来以为前方可以直达终点，现在发现那条边有墙，原来的距离可能过小。程序会清空旧距离，再从终点计算一遍整个距离场。
+
+所以：
+
+- **一次规划内部**，机器人选择的相邻格距离等于当前格距离减 1。
+- **移动并再次感知之后**，新距离场可能和旧距离场不同；屏幕数字可能突然变大。
+- 第一次探索包含试路和回头路，**不保证实际走过的总步数是整张真实地图的最短路线长度**。
+- BFS 算出的，是当前“已知墙阻挡、未知边暂时开放”的地图上的最短距离。
+
+这是经典搜索和重复规划，不是机器人通过训练学会了新策略。
+
+### 6.5 `None` 和不可达
+
+计算开始时，除了终点以外所有格子的距离都设为 `None`，暂时表示“还没有被这轮扩散到”。队列处理完以后，仍然是 `None` 的格子才表示“在当前规划地图上无法连接到终点”。
+
+如果连把所有未知边当成开放都找不到路，那么在这个静态、观测准确的模型中，之后再发现更多墙也不可能创造出一条新通路。因此机器人可以宣布不可达，不必先访问全部 64 格。
+
+<a id="lesson-7"></a>
+## 7. 对照真实运行，看懂一次回头路
+
+### 7.1 `open`：最简单的成功案例
+
+起点 `(0, 0)` 到终点 `(7, 7)`，至少需要向右 7 次、向下 7 次，共 14 步。
+
+由于东优先，机器人先沿顶部走到 `(7, 0)`，再沿右侧向下走到终点。第一次点击 Step 后：
+
+```text
+position = (1, 0)
+steps = 1
+visited 包含 (0, 0) 和 (1, 0)
+path = [(0, 0), (1, 0)]
+```
+
+注意：走完空地图也不代表探测完了整张地图。只要没有接触到的内部边仍会显示未知虚线。
+
+### 7.2 `detour`：第 12 步为什么很关键
+
+这张地图在右侧设置了一段死路。以下是当前代码和方向顺序下的实际结果：
+
+| 已移动步数 | 当前位置 | 本次感知、重算后的当前位置距离 | 发生的事情 |
+| ---: | --- | ---: | --- |
+| 0 | `(0, 0)` | 14 | 起点已感知 |
+| 7 | `(7, 0)` | 7 | 沿顶部走到右侧入口 |
+| 11 | `(7, 4)` | 3 | 仍认为可以继续向下 |
+| 12 | `(7, 5)` | 14 | 发现南面和西面的新墙，死路被确认 |
+| 13 | `(7, 4)` | 13 | 开始向上回头 |
+| 17 | `(7, 0)` | 9 | 回到右侧入口 |
+| 18 | `(6, 0)` | 8 | 向西离开死路入口 |
+| 24 | `(6, 6)` | 2 | 从旁边向下绕过障碍 |
+| 25 | `(7, 6)` | 1 | 到达终点上方 |
+| 26 | `(7, 7)` | 0 | 到达终点 |
+
+第 12 步最值得停下来观察：
+
+1. 移动前，机器人站在 `(7, 4)`，其旧距离是 3，下面的 `(7, 5)` 的旧距离是 2。
+2. 它确认向下的边是通路，因此从 3 走向 2，满足“距离减 1”的规则。
+3. 到达 `(7, 5)` 后，它发现南面与西面都有墙。
+4. 重新规划后，同一个 `(7, 5)` 的距离从旧的 2 变成新的 14。
+5. 新地图中，向北走回 `(7, 4)` 才是正确的下一步。
+
+所以“数字从 3 变成 14”不是违反了选择规则：选择依据是**移动前的距离场**，画面显示的是**移动后感知并重新计算的距离场**。
+
+最后总计 26 次移动，轨迹列表包含起点在内有 27 项，但只访问了 21 个不同格子。`27 - 21 = 6`，意味着发生了 6 次回访。这个例子展示的是未知地图探索的绕路；真实地图中其实存在一条 14 步的路线，探索者一开始没有走上它。
+
+### 7.3 `blocked`：停止也是正确结果
+
+终点 `(7, 7)` 在角落，右边和下边本来就是外边界。地图再把它的左边与上边封住，终点就完全隔离了。
+
+机器人不会一开始就知道这两堵内部墙。它需要移动并逐步发现它们，直到当前已知地图已经足以证明不可达，才停止。这与“程序卡住”或“出现异常退出”不同：`unreachable` 是正常结束状态之一。
+
+<a id="lesson-8"></a>
+## 8. 文件结构与整个程序的调用关系
+
+仓库中的主要文件是：
+
+```text
+flood-fill-maze-robot/
+├── main.py          启动入口与启动错误提示
+├── maze.py          坐标、真实地图、机器人地图、三张预设地图
+├── planner.py       洪水填充 / 反向 BFS
+├── simulator.py     机器人状态与一次感知、规划、移动的组织
+├── ui.py            窗口、按钮、绘图与自动运行定时器
+├── test_robot.py    自动测试和独立的正确性参照
+├── README.md        当前教程
+├── LICENSE          MIT 许可证
+└── .gitignore       提示 Git 忽略缓存等本地文件
+```
+
+建议阅读源码的顺序是 **maze.py → planner.py → simulator.py → ui.py → main.py → test_robot.py**。这样先认识数据，再看算法，再看它们如何组合；不要一上来就钻进界面的所有绘图细节。
+
+从运行顺序看，则是：
+
+```text
+运行 main.py
+  └─ main() 导入 ui，调用 ui.launch()
+       ├─ tk.Tk() 创建窗口
+       ├─ MazeApp(root) 创建界面
+       │    └─ _reset() 创建 Simulation
+       │         └─ 起点感知 → 记录地图 → flood_fill()
+       └─ root.mainloop() 等待点击、定时器、缩放等事件
+
+点击 Step
+  └─ MazeApp._step()
+       ├─ Simulation.step()
+       │    ├─ 用当前距离场选择可通行的下一格
+       │    ├─ 更新位置、朝向、步数、访问集合和轨迹
+       │    └─ _observe_and_plan()
+       │         ├─ Maze.sense(当前位置)
+       │         ├─ KnownMaze.record(观测)
+       │         ├─ flood_fill(已知地图, 终点)
+       │         └─ 检查到达 / 不可达
+       └─ _refresh() 更新文字、按钮和画面
+```
+
+本项目把算法和界面分开，因此可以不打开窗口，直接在 Python 脚本中运行机器人；自动测试也正是这样做的。
+
+<a id="lesson-9"></a>
+## 9. 读懂 maze.py：世界和地图
+
+打开 [maze.py](maze.py)。它既定义数据表示，也保存三张预设地图。
+
+### 9.1 类型别名与方向
+
+```python
+Cell = Tuple[int, int]
+Direction = Tuple[int, int]
+Edge = Tuple[Cell, Cell]
+DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1))
+```
+
+这里给几种数据形状起了容易理解的名字：格子、方向、边。它们是类型别名，不是另外创建了三种带行为的机器人对象。
+
+`DIRECTIONS` 的排列顺序也是决策规则的一部分。对同样好的候选格，`step()` 遇到第一个合适的方向就返回，因此改变这个顺序可能改变实际探索路线。
+
+### 9.2 `neighbor()` 和 `edge_key()`
+
+- `neighbor(cell, direction)`：坐标加上方向，得到相邻格。它只计算，不保证结果在地图内部。
+- `edge_key(a, b)`：先检查两个格子是否上下左右相邻，再把端点排序，生成唯一公共边标识。
+
+相邻性用 `abs(a[0] - b[0]) + abs(a[1] - b[1]) == 1` 判断：横向差和纵向差的绝对值相加必须等于 1。`abs()` 是取绝对值。
+
+### 9.3 `Maze`：真实地图
+
+`@dataclass(frozen=True)` 会为这个数据类生成初始化等常用方法，并限制创建后直接修改字段。初学时可以把它当作“一张创建好就保持固定的地图记录”。
+
+| 字段 | 含义 |
+| --- | --- |
+| `name`、`description` | 地图名称和说明，供代码阅读与扩展使用；当前下拉框显示的是预设键名 |
+| `size` | 正方形地图边长，默认 8 |
+| `walls` | 内部墙的不可变集合；省略时为空 |
+| `start` | 起点，默认 `(0, 0)` |
+| `goal` | 终点，省略时自动设为右下角 |
+
+`__post_init__()` 在数据类生成的初始化之后执行：检查尺寸和坐标是否合法，补上默认终点，并统一墙的端点顺序。因为类被冻结，这个初始化整理过程通过 `object.__setattr__()` 设置整理后的字段；日常使用地图时不需要照着它修改内部属性。
+
+`contains(cell)` 判断一个格子是否在地图内。
+
+`sense(cell)` 只返回这个格子的四个方向是 `OPEN` 还是 `WALL`。它通过真实墙集合模拟理想传感器，但不把整张真实地图交给规划函数。边界以外直接视为墙；代码中的 `or` 短路使这一步不必继续检查内部墙集合。
+
+### 9.4 `KnownMaze`：机器人逐渐建立的地图
+
+刚创建时，内部字典 `_edges` 是空的。外边界不是一条条存进这个字典，而是查询时根据坐标自动返回 `WALL`。
+
+`edge_state(cell, direction)` 的工作顺序：
+
+1. 检查格子和方向是否合法。
+2. 算出另一端格子。
+3. 如果越界，返回 `WALL`。
+4. 否则查询 `_edges`；查不到就返回 `UNKNOWN`。
+
+`record(cell, observation)` 接收当前格四边的观测，并记录内部边。由于两端使用同一个 `edge_key`，从相邻格反向查询也能得到同样结果。
+
+这个静态迷宫假设墙不会移动、感知不会出错。如果同一条边先被报告为墙，之后却被报告为通路，`record()` 会抛出 `ValueError`，帮助我们尽早发现矛盾。
+
+### 9.5 三张预设如何构造
+
+`PRESETS` 是一个字典：键为 `"open"`、`"detour"`、`"blocked"`，值是三个 `Maze` 对象。
+
+`detour` 的墙集合由两部分组成：
+
+```python
+{edge_key((6, y), (7, y)) for y in range(1, 6)}
+```
+
+这会生成 `y = 1, 2, 3, 4, 5` 对应的五堵墙，把右侧走廊的西面隔开。再加上 `(7, 5)` 与 `(7, 6)` 之间的墙，把走廊南端封住。源码中的集合符号 `|` 是“取并集”，即合并这两部分墙。
+
+<a id="lesson-10"></a>
+## 10. 读懂 planner.py：完整的距离计算
+
+打开 [planner.py](planner.py)。这个文件只有一个核心函数 `flood_fill()`。它输入已知地图和终点，输出“坐标 → 距离”的字典。
+
+核心计算可以按下面四段理解。
+
+**第一段：把所有格子初始化为未到达，终点设为 0。**
+
+```python
+distances = {
+    (x, y): None for y in range(known.size) for x in range(known.size)
+}
+distances[goal] = 0
+queue = deque([goal])
+```
+
+字典推导式等价于两层循环：依次枚举每一行、每一列，把每个坐标放入字典。`distances[goal] = 0` 是设置终点的值，不是改变终点坐标。
+
+**第二段：每次处理队头的一个格子。**
+
+```python
+while queue:
+    cell = queue.popleft()
+```
+
+每个格子最多入队一次；队列为空时，本轮计算结束。
+
+**第三段：检查它的四个邻居，跳过墙。**
+
+```python
+for direction in DIRECTIONS:
+    other = neighbor(cell, direction)
+    if known.edge_state(cell, direction) == WALL:
+        continue
+```
+
+这里只跳过 `WALL`，因此 `OPEN` 和 `UNKNOWN` 都允许规划扩散。外边界也会被 `edge_state()` 报告为墙，所以在后面访问 `distances[other]` 之前，越界邻居已经被跳过。
+
+**第四段：给首次到达的邻居标数字并入队。**
+
+```python
+if distances[other] is None:
+    distances[other] = distances[cell] + 1
+    queue.append(other)
+```
+
+已经标记过的格子不重复加入队列。这既防止无休止地来回扩散，也保证按照层次处理。
+
+`flood_fill()` 不会移动机器人，也不决定画面怎么显示；它只返回一张距离表。这个函数拿到的是 `KnownMaze`，没有读取 `Maze.walls`。
+
+**复杂度可以先这样理解：** 每格最多处理一次，每格检查四个方向。若地图边长是 `n`，格子数是 `n²`，一次计算的时间与额外存储量都在 `O(n²)` 量级。这是一次完整重算的成本，不是整个探索过程的总成本。对于 8 × 8 的小地图，完整重算易懂且足够；本项目没有实现局部增量更新。
+
+<a id="lesson-11"></a>
+## 11. 读懂 simulator.py：机器人怎样走一步
+
+打开 [simulator.py](simulator.py)。`Simulation` 把地图、距离和机器人状态组合起来。
+
+### 11.1 先认识保存的状态
+
+| 属性 | 含义 |
+| --- | --- |
+| `_sense` | 保存真实地图的局部感知方法 |
+| `known` | 机器人已经知道的地图 |
+| `position` | 当前格子坐标 |
+| `heading` | 当前朝向；初始朝东，移动后改为本次方向 |
+| `steps` | 总移动次数 |
+| `visited` | 不重复的已访问格子集合 |
+| `path` | 从起点开始的完整轨迹列表，允许重复 |
+| `status` | `exploring`、`reached` 或 `unreachable` |
+| `last_event` | 最近发生的事情，用于窗口底部说明 |
+| `distances` | 最新一次洪水填充的结果 |
+
+`steps == len(path) - 1` 应该始终成立，因为轨迹包括还没移动时的起点。
+
+`visited` 用于统计和显示，也用于判断提示文字是否写“回访”；它不会禁止机器人再次走进已经访问过的格子。回头路由新的距离场自然决定，程序没有另外设置“倒退模式”。
+
+### 11.2 初始化会先感知起点
+
+`__init__()` 建好状态后，立刻调用 `_observe_and_plan()`。这样第一次点击 Step 时，机器人已经知道当前格有哪些出口，也已经有可用的距离场。
+
+如果起点本来就是终点，初始化后直接是 `reached`、0 步。如果起点被墙完全围住且不等于终点，则可以在 0 步时直接判定不可达。
+
+### 11.3 `_observe_and_plan()`：感知、记录、规划、判断
+
+它依次做四件事：
+
+1. 调用 `_sense(self.position)` 得到当前四边观测。
+2. 计算新发现的墙数，并调用 `known.record()` 保存观测。
+3. 调用 `flood_fill()` 替换 `self.distances`。
+4. 判断是否到达终点，或者当前位置的距离是否为 `None`。
+
+“新墙数”只计原来为 `UNKNOWN`、现在被探测为 `WALL` 的边；已知外边界不会每次都当成新发现。
+
+返回的新墙数是给提示文字使用的。这个方法本身不让机器人再走一步。
+
+### 11.4 `step()`：用旧距离选择，然后得到新距离
+
+先看最重要的条件：
+
+```python
+if (self.known.edge_state(self.position, direction) == OPEN
+        and self.distances.get(other) == current_distance - 1):
+```
+
+读成中文就是：
+
+> 只有当前这条边已经确认能走，并且邻居的距离恰好比当前距离小 1，才选择它。
+
+选中之后，程序会：
+
+1. 先判断目标格是否已经访问过，用于提示 `Revisited`。
+2. 修改 `position` 和 `heading`。
+3. 让 `steps` 加 1。
+4. 把新位置加入 `visited` 和 `path`。
+5. 在新位置调用 `_observe_and_plan()`。
+6. 更新提示文字并返回 `True`。
+
+返回 `True` 表示这次确实移动了，不表示“还会继续探索”。恰好走到终点的最后一步也返回 `True`，但此时 `status` 已经变成 `reached`。在结束状态下再调用 `step()`，它直接返回 `False`，位置和步数不变。
+
+末尾的 `RuntimeError` 是一致性检查：若当前距离有限，又已经探测了当前四边，那么应当至少存在一个通向更小距离的开放邻居。如果一个都找不到，说明地图或算法的内部条件出现了错误；正常的“终点不可达”已经通过 `status` 处理，不应该走到这个异常分支。
+
+<a id="lesson-12"></a>
+## 12. 读懂 ui.py 与 main.py：让算法出现在窗口里
+
+### 12.1 main.py 为什么只有很少的代码
+
+[main.py](main.py) 是启动入口。它导入界面模块并调用 `ui.launch()`，同时针对缺少 Tkinter、无法创建图形窗口等情况给出错误提示。
+
+```python
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+直接运行 `python3 main.py` 时，条件成立，程序调用 `main()`。如果其他 Python 文件只是 `import main`，就不会因为导入而自动打开窗口。
+
+`main()` 返回 0 表示正常结束；启动失败时返回 1。这里的 `SystemExit` 是把这个退出结果交给系统，不表示运行到这行就“程序崩溃”。
+
+### 12.2 ui.py 的三个基本部件
+
+在 [ui.py](ui.py) 底部：
+
+```python
+def launch():
+    root = tk.Tk()
+    MazeApp(root)
+    root.mainloop()
+```
+
+`root` 是主窗口；`MazeApp` 负责放入按钮、地图和状态文字；`mainloop()` 持续处理用户点击、定时器、窗口重绘等事件。
+
+`_build_widgets()` 使用的主要控件：
+
+| 名称 | 作用 |
+| --- | --- |
+| `ttk.Frame` | 把若干控件放在同一个容器里 |
+| `ttk.Label` | 显示标题、图例和状态文字 |
+| `ttk.Combobox` | 选择地图的下拉框 |
+| `ttk.Button` | Step、Run/Pause、Reset 按钮 |
+| `tk.Canvas` | 绘制格子、墙、数字、轨迹和机器人 |
+| `tk.StringVar` | 与控件绑定的文字变量；`.set()` 更新，`.get()` 读取 |
+
+控件的 `grid()` 用行列安排界面位置。这里的布局网格，与机器人活动的迷宫网格不是同一件事。
+
+`command=self._step` 把函数交给按钮，等点击时再调用；若写成 `command=self._step()`，就会在创建按钮时立即调用它，这是初学者常见错误。
+
+### 12.3 每个界面方法的职责
+
+| 方法 | 主要工作 |
+| --- | --- |
+| `__init__()` | 设置窗口、界面变量，创建控件并重置一次 |
+| `_build_widgets()` | 创建标题、下拉框、按钮、画布、图例和文字 |
+| `_pause()` | 停止自动运行，取消尚未触发的定时回调 |
+| `_reset()` | 先暂停，再为当前地图创建全新的 `Simulation` |
+| `_step()` | 调用一次 `sim.step()`，必要时暂停，最后刷新 |
+| `_toggle_run()` | 在运行与暂停之间切换 |
+| `_tick()` | 自动运行的单次定时回调；走一步，再按需要预约下一次 |
+| `_refresh()` | 更新按钮是否可用、运行状态、提示文字，再重画 |
+| `_draw()` | 根据当前已知地图和机器人状态绘图 |
+| `_close()` | 取消定时器并销毁窗口 |
+
+### 12.4 Run 为什么不用一个死循环
+
+```python
+self.timer = self.root.after(self.TICK_MS, self._tick)
+```
+
+`TICK_MS = 500` 表示预约约 500 毫秒之后调用 `_tick()`。这个预约不会阻塞整个窗口，程序仍能响应暂停和重置；实际间隔还会受事件处理时间影响。
+
+`_tick()` 执行完一步后，如果仍在运行，再预约下一次。暂停、重置或更换地图时，会通过 `after_cancel()` 取消尚未触发的预约，避免旧地图的定时事件影响新地图。
+
+本项目没有为自动运行创建另一个线程。如果在界面回调里写一个一直计算的 `while True`，或者长时间 `sleep()`，窗口可能来不及处理其他事件，因此不采用这种写法。
+
+### 12.5 `_draw()` 怎样把坐标变成图形
+
+假设一个格子的显示边长为 `cell_size`，棋盘左上角在 `(left, top)`，那么格子 `(x, y)` 的中心就是：
+
+```text
+横向像素坐标 = left + (x + 0.5) × cell_size
+纵向像素坐标 = top  + (y + 0.5) × cell_size
+```
+
+加 `0.5` 是为了从格子左上角移动到格子中心。`_draw()` 根据当前画布大小重新计算格子尺寸，所以窗口缩放后地图仍会调整。
+
+绘图大致按以下顺序进行：
+
+1. 清除上一次画出的图形。
+2. 给访问过的格子和终点填色，并写入距离数字。
+3. 连接历史轨迹，绘制 `G`。
+4. 绘制已知墙和未知虚线，已知开放边不画线。
+5. 根据当前位置与朝向绘制蓝色三角形。
+
+每条内部边只绘制一次：主要画各格的东边、南边，再补最左边和最上边的外边界，避免重复画同一条边。
+
+界面读的是 `self.sim.known`，没有把隐藏的真实内部墙提前画出来。距离可以显示在未访问格子里，因为它们是算法根据当前假设算出来的数字，并不意味着机器人已经探测过这些格子。
+
+<a id="lesson-13"></a>
+## 13. 不开窗口也能做的完整实验
+
+以下实验用于理解数据与算法。先用支持纯文本的代码编辑器打开项目文件夹，新建一个文件，粘贴某个实验的完整代码，再保存为 `practice.py`，放在 `main.py` 所在的同一个文件夹。若你的 Python 安装提供 IDLE，也可以使用它的 File → New File 和 File → Save As 创建文件。不要用 Word 等文字处理软件保存 Python 源码。
+
+保存后，在已经进入项目文件夹的终端中运行：
+
+```sh
+python3 practice.py
+```
+
+Windows 对应使用 `py practice.py`。每次实验可以覆盖你自己的 `practice.py` 内容，但不要覆盖项目现有源码。文件要保存为纯文本、UTF-8 编码，扩展名是 `.py`，不要变成 `.py.txt`。
+
+### 实验 A：亲眼验证一张 3 × 3 距离表
+
+下面是完整代码：
+
+```python
+from maze import KnownMaze
+from planner import flood_fill
+
+known = KnownMaze(size=3, start=(0, 0), goal=(2, 2))
+distances = flood_fill(known, known.goal)
+
+for y in range(3):
+    print(" ".join(str(distances[(x, y)]) for x in range(3)))
+```
+
+预期输出：
+
+```text
+4 3 2
+3 2 1
+2 1 0
+```
+
+这里没有记录任何内部边。所有内部边都是未知，规划时按开放处理，所以得到空地图的距离表。`str()` 把数字转成文字，`" ".join(...)` 用空格把一行文字连接起来。
+
+### 实验 B：打印机器人的每一步
+
+下面是完整代码：
+
+```python
+from maze import PRESETS
+from simulator import Simulation
+
+sim = Simulation(PRESETS["detour"])
+print(sim.steps, sim.position, sim.distances[sim.position], sim.status)
+
+while sim.status == "exploring":
+    sim.step()
+    print(sim.steps, sim.position, sim.distances[sim.position], sim.status)
+
+print("moves =", sim.steps)
+print("unique cells =", len(sim.visited))
+print("revisits =", len(sim.path) - len(sim.visited))
+```
+
+最后三行应该是：
+
+```text
+moves = 26
+unique cells = 21
+revisits = 6
+```
+
+回头检查第 12 步是否是 `(7, 5)`、距离 14。把预设名改成 `"open"` 或 `"blocked"`，比较输出。这个实验的循环每次都检查 `status`，所以到达或不可达后会停止。
+
+### 实验 C：亲眼验证“真实有墙，但机器人还不知道”
+
+下面是完整代码。这里为了教学观察，同时打印真实观测和机器人地图；正常规划函数不会像实验脚本这样直接查询真实地图。
+
+```python
+from maze import Maze, edge_key
+from simulator import Simulation
+
+maze = Maze(
+    name="Hidden wall example",
+    description="A wall away from the start",
+    size=4,
+    walls=frozenset({edge_key((2, 2), (3, 2))}),
+)
+sim = Simulation(maze)
+
+print("real:", maze.sense((2, 2))[(1, 0)])
+print("known:", sim.known.edge_state((2, 2), (1, 0)))
+
+# 仅为演示：手动给机器人地图补入这个格子的观测。
+sim.known.record((2, 2), maze.sense((2, 2)))
+print("after observation:", sim.known.edge_state((2, 2), (1, 0)))
+print("from the other side:", sim.known.edge_state((3, 2), (-1, 0)))
+```
+
+预期输出：
+
+```text
+real: wall
+known: unknown
+after observation: wall
+from the other side: wall
+```
+
+这里手动写入远处观测，是为了单独演示地图接口，**不是正常探索过程**。它也没有自动重新计算 `sim.distances`；不要在这个被手动改过地图的 `sim` 上继续做正常移动。真实运行由 `_observe_and_plan()` 统一负责记录和重算。
+
+<a id="lesson-14"></a>
+## 14. 自动测试：怎样确认程序没有只在演示时碰巧成功
+
+打开 [test_robot.py](test_robot.py)。测试会创建模拟器并检查结果，不需要打开 Tkinter 窗口。
+
+在项目文件夹运行：
+
+**macOS / Linux：**
 
 ```sh
 python3 -m unittest -v
 ```
 
-The tests run without opening a GUI and do not require Tkinter. They check local sensing, safe moves, shared wall observations, preset outcomes, and special cases such as an enclosed start. They also compare fully known flood-fill distances with an independent Dijkstra implementation and check exploration results on deterministic random mazes.
+**Windows：**
 
-These checks cover the discrete simulation. They do not validate a physical robot or compare planning speed with other algorithms.
+```powershell
+py -m unittest -v
+```
 
-## Files
+`unittest` 是 Python 标准库中的测试工具；`-v` 表示显示每个测试的名称和结果。当前未修改版本最后应出现类似：
 
-| File | Purpose |
+```text
+Ran 10 tests in ...s
+
+OK
+```
+
+运行时间因电脑而异，不需要与某个固定秒数一致。
+
+### 14.1 这 10 项测试检查了什么
+
+| 测试主题 | 检查的事情 |
 | --- | --- |
-| `main.py` | Start the application and report Tkinter startup errors |
-| `maze.py` | Maze data, local sensing, discovered map, and three presets |
-| `planner.py` | Reverse BFS flood-fill distance calculation |
-| `simulator.py` | Sense, plan, and move loop |
-| `ui.py` | Tkinter window and playback controls |
-| `test_robot.py` | Simulation and planner tests |
-| `README.md` | Setup, algorithm, and limitations |
-| `LICENSE` | MIT License |
-| `.gitignore` | Ignore Python caches and local environment files |
+| 开放地图 | 最终到达，步数为 14 |
+| 死路绕行 | 最终到达，步数为 26，并且确实重复访问过格子 |
+| 终点封闭 | 正常停止为不可达，且没有访问终点 |
+| 隐藏墙壁 | 未访问墙任一端之前，这条墙不能提前出现在已知地图中 |
+| 对称与矛盾观测 | 同一条边从两端看一致；矛盾的静态观测应报错 |
+| 起点就是终点 | 包括 1 × 1 地图，0 步结束 |
+| 起点被包围 | 0 步判定不可达 |
+| 非法终点 | 地图外的终点坐标被拒绝 |
+| 完整地图的距离 | 在 24 张固定随机地图上，与独立参照算法的结果逐格比较 |
+| 探索结果 | 在另外 30 张固定随机地图上，核对真实可达性与探索结果一致 |
 
-## License
+“10 项测试”按测试方法计数；其中两项内部还循环检查了 24 和 30 个固定随机案例，所以不是只运行了 10 张地图。
 
-MIT License. Copyright © 2026 HeLingan.
+`run_checked()` 在每次移动时还检查：没有越界、没有穿墙、跨过的边移动前已经是 `OPEN`、邻居在移动前的距离场中正好小 1、已知信息没有提前泄露，并且结束后再次调用 `step()` 不会继续移动。
+
+### 14.2 为什么测试还写了另一个算法
+
+`actual_distances()` 使用真实地图和独立实现的 Dijkstra 算法作为参照。它维护一个优先队列，优先处理目前距离最小的格子；在本项目每步代价都是 1 的情况下，其距离结果应与完整已知地图上的 BFS 相同。
+
+它不调用我们的 `flood_fill()`，目的是避免“用同一个可能写错的函数来证明自己正确”。`heapq` 提供这个优先队列；`random.Random(seed)` 让相同种子产生相同测试地图，便于复现问题。
+
+测试为了核对结果会查看完整真实地图；这不会把完整地图交给运行中的机器人规划器。第 13 节实验 C 也会为了教学观察主动读取真实地图，应与正常机器人的局部感知流程区分开。
+
+这些测试验证的是当前离散模型和这些案例，不是对所有可能扩展的形式化证明，也不是实体机器人测试。自动测试不覆盖所有界面显示问题，修改 `ui.py` 后仍应打开窗口检查操作与布局。
+
+<a id="lesson-15"></a>
+## 15. 自己修改：从一个参数开始
+
+修改前先备份文件或复制一份项目。每次只改一个小地方，保存文件，关闭旧程序，再重新启动；正在运行的 Python 程序不会因为你保存了源码就自动加载全部修改。
+
+### 练习 1：让机器人走慢一点
+
+打开 `ui.py`，把：
+
+```python
+TICK_MS = 500
+```
+
+改成：
+
+```python
+TICK_MS = 1000
+```
+
+重新启动，在 `open` 地图点 Run。预期是大约每秒移动一格；最终仍然走 14 步。这个修改改变显示速度，不改变寻路算法。
+
+### 练习 2：手算距离，再用实验 A 验证
+
+把实验 A 的地图改成 `size=4`，终点改成 `(3, 3)`，两处输出循环也改成 `range(4)`。
+
+先不用运行，预测左上角数字是多少，再运行验证。答案应该是 6，因为空地图需要向右 3 步、向下 3 步。
+
+### 练习 3：给窗口添加一张自己的小地图
+
+在 `maze.py` 的 `PRESETS = {...}` 字典内添加一个条目。注意条目之间用逗号分隔；这里用到的 `Maze`、`edge_key` 已经在这个文件里定义。
+
+```python
+"my_maze": Maze(
+    "My first maze",
+    "A small maze with one wall",
+    size=4,
+    walls=frozenset({edge_key((0, 0), (1, 0))}),
+),
+```
+
+这个代码片段应放在 `PRESETS` 字典的大括号里面，而不是单独粘到文件最后。
+
+重新启动程序，下拉框中应该出现 `my_maze`。选中它后，起点仍在 `(0, 0)`，默认终点变成 `(3, 3)`。起点东侧被墙挡住，所以第一步应向南到 `(0, 1)`。在当前方向规则下，这个例子仍会用 6 步到达终点。
+
+先解释“为什么第一步不能向右”，再尝试换一堵墙。不要把不相邻的格子或地图外格子写成内部墙。
+
+### 练习 4：制造一个 0 步就能判定不可达的地图
+
+继续在 `PRESETS` 内添加另一个条目：
+
+```python
+"trapped_start": Maze(
+    "Trapped start",
+    "The starting cell has no exit",
+    size=4,
+    walls=frozenset({
+        edge_key((0, 0), (1, 0)),
+        edge_key((0, 0), (0, 1)),
+    }),
+),
+```
+
+起点上边和左边本来就是边界；再挡住右边和下边，起点就没有出口。选中它后，应直接显示不可达，`Steps` 为 0。尝试说明为什么不必走出去探索就能判断。
+
+### 练习 5：改变平局选择顺序，观察路线差异
+
+在一份单独的实验副本中，把 `maze.py` 的 `DIRECTIONS` 改成先南后东：
+
+```python
+DIRECTIONS = ((0, 1), (1, 0), (-1, 0), (0, -1))
+```
+
+这个修改仍保留四个合法方向，但改变了“同样好时选哪一个”。`open` 中应先向下走，仍为 14 步；`detour` 中则可能避开原来右侧死路，原来的 26 步预期就不再适用。
+
+此时某个原始测试失败，不一定表示 BFS 算错，也可能是测试原本固定了东优先的路线。先解释失败原因，再决定是否调整行为约定和对应测试；不要仅为了看到 `OK` 就删除断言。做完练习后恢复原方向顺序，再运行原始测试。
+
+### 练习 6：为自己的地图增加一个测试
+
+完成练习 3 后，可以在 `test_robot.py` 的 `RobotTests` 类内部添加这个方法，缩进与其他测试方法保持一致：
+
+```python
+def test_my_maze_reaches_goal(self):
+    simulation = self.run_checked(PRESETS["my_maze"])
+    self.assertEqual(simulation.status, "reached")
+    self.assertEqual(simulation.steps, 6)
+```
+
+这段代码依赖已经添加好的 `my_maze`。`self.run_checked()` 会在每一步复用安全和地图检查；`assertEqual()` 表示“实际结果必须等于预期”。增加后测试数量会从 10 变成 11。
+
+写测试前应该先通过纸笔或独立分析得到预期结果，再验证程序。直接把程序刚刚输出的任意数字照抄进测试，不能证明这个数字正确。
+
+<a id="lesson-16"></a>
+## 16. 常见问题与排错顺序
+
+遇到错误时先保留完整报错文字。Python 的 `Traceback` 通常会告诉你出错文件和行号，最后一行说明异常类型；先读最后一行，再回到对应代码位置。
+
+| 现象 | 常见原因 | 可以怎么检查 |
+| --- | --- | --- |
+| 提示 `python3`、`py` 或 `python` 找不到 | 没装好解释器，或命令名称不同 | 先运行版本命令；安装后重新打开终端 |
+| `can't open file ... main.py` | 终端目录不对，或项目没解压 | 用 `dir` / `ls` 确认当前目录内有 `main.py` |
+| `No module named maze` 等 | 只下载了部分文件，或把文件分散放置 | 确认六个 `.py` 文件在同一项目文件夹 |
+| 缺少 `tkinter` 或 `_tkinter` | 当前解释器没有可用的 Tk 支持 | 用同一个解释器执行 `-m tkinter`；按 Python 发行方说明补齐 Tk |
+| 窗口空白 | Tk 与当前系统的兼容或显示环境问题 | 先看 Tk 测试窗口是否正常；旧 Apple Tk 8.5 曾出现此问题，可换现代 Python/Tk |
+| 提示没有 display、无法创建窗口 | 在没有图形桌面的服务器、远程会话等环境运行 | 在本地图形桌面运行 GUI；无界面实验和核心测试仍可单独运行 |
+| `SyntaxError` / `IndentationError` | 逗号、括号、引号或缩进错误 | 查看报错行及其上一行，避免把中文标点当代码标点 |
+| 改完文件后看不到变化 | 忘记保存，或旧程序仍在运行 | 保存文件，关闭窗口，再启动同一份项目 |
+| 修改地图后测试失败 | 原测试固定了某些地图和路线结果 | 先看失败的断言；新增地图优先新增预设，不要随意覆盖原始预设 |
+| 地图还有很多虚线，程序却结束了 | 未知边不一定都需要探索 | 到达终点或已能证明不可达时就会停止 |
+| 最后数字是 `None` / 画面是 `∞` | 当前规划地图中不可达 | 结合 `status` 判断，`blocked` 预设本来就应这样结束 |
+
+进一步检查正在用哪个 Python，可以运行：
+
+```sh
+python3 -c "import sys; print(sys.executable); print(sys.version)"
+```
+
+Windows 对应把 `python3` 换成 `py`。`-c` 表示直接执行引号里的少量 Python 代码。不同终端或编辑器可能使用不同解释器，所以“某处能运行”不代表另一处自动使用同一套环境。
+
+建议的排查顺序是：**解释器能运行 → 当前目录正确 → 核心测试通过 → Tk 测试窗口正常 → 项目窗口正常**。这样可以把算法问题和图形环境问题分开定位。
+
+<a id="lesson-17"></a>
+## 17. 怎样判断自己真正学会了这个项目
+
+不要以“程序在我的电脑上跑过一次”为唯一标准。试着不看源码，用自己的话回答下面的问题，并通过修改或运行验证。
+
+| 自测问题 | 应该能说出的要点 |
+| --- | --- |
+| 一堵墙怎样存储？ | 两个上下左右相邻格子的公共边；端点顺序统一 |
+| `Maze` 和 `KnownMaze` 有什么不同？ | 完整真实世界与机器人逐步获得的知识 |
+| 起点为什么一开始就有已知边？ | 初始化已经感知过起点四边 |
+| 洪水填充为什么从终点开始？ | 一次计算得到所有格子到同一目标的距离 |
+| 为什么用队列，不随便拿一个格子处理？ | FIFO 维持按距离层次扩散的顺序 |
+| 未知边是否等于真实通路？ | 不等于；只是规划时的暂时假设 |
+| 为什么不会直接跨过未知边？ | 当前格先感知，移动条件还明确要求 `OPEN` |
+| 第 12 步距离变大意味着什么？ | 发现新墙，移动后的距离场已经重新计算 |
+| 26 步为什么不是最短路证明？ | 它包含探索和回头路，真实地图另有更短路径 |
+| `steps`、`path`、`visited` 有什么不同？ | 移动次数、带重复的坐标序列、不重复格子集合 |
+| 终点不可达是不是程序错误？ | 不是；它是正常结束状态之一 |
+| 怎样更换地图或调整速度？ | 修改预设或 `TICK_MS`，重启后观察并验证 |
+| 怎样确认修改没有破坏核心行为？ | 运行测试，查看失败原因，必要时增加有独立预期的新测试 |
+
+建议完成四个学习成果：
+
+1. 不依赖别人，能从下载开始运行项目，并解决一次目录或解释器问题。
+2. 能手算 3 × 3 的距离场，并解释 `detour` 的回头过程。
+3. 能沿着 Step 的调用关系，指出数据、算法、运行状态和界面分别在哪里。
+4. 能新增一张自己的地图和一个测试，说明预期、实际结果及原因。
+
+如果用于学习记录或实习项目介绍，可以在实际掌握后这样组织表达：
+
+> 这是一个 Python 二维迷宫机器人模拟项目。我理解并复现了局部墙壁感知、地图记录和基于反向 BFS 的洪水填充规划。我通过单步运行观察了死路回退，并使用测试检查移动安全、地图一致性和到达结果。我独立完成的修改是……，验证方法是……。
+
+最后两处应填写你真实做过的工作。请如实说明 AI 辅助开发的部分，区分“读懂了”“复现了”“自己修改并验证了”和“尚未完成的想法”。能解释清楚一个小项目，比罗列自己还不理解的技术名词更有帮助。
+
+<a id="lesson-18"></a>
+## 18. 延伸阅读与许可证
+
+遇到语法细节时，可以按需查阅官方资料，不必在运行项目之前读完整本教程：
+
+- [Python 官方教程：基础语法、控制流程、函数与类](https://docs.python.org/zh-cn/3/tutorial/index.html)
+- [Python 官方教程：数据结构](https://docs.python.org/3/tutorial/datastructures.html)
+- [Tkinter 官方文档：安装检查与窗口编程](https://docs.python.org/3/library/tkinter.html)
+- [deque 官方文档：队列操作](https://docs.python.org/3/library/collections.html#collections.deque)
+- [unittest 官方文档：编写与运行测试](https://docs.python.org/3/library/unittest.html)
+
+项目采用 [MIT License](LICENSE)，Copyright © 2026 HeLingan。复制或再分发代码时，应保留许可证要求的版权与许可声明。
