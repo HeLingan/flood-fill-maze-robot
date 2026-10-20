@@ -1,6 +1,6 @@
 """用 Tkinter 显示机器人已发现的迷宫，支持单步和定时运行。
 
-对应 README 第 12 章。可以先看文件末尾的 launch()，再顺着
+对应 README 第 12 节。可以先看文件末尾的 launch()，再顺着
 MazeApp.__init__() → _build_widgets() → _reset() 阅读启动过程。
 点击 Step 时的调用顺序是 _step() → Simulation.step() → _refresh()。
 
@@ -22,7 +22,9 @@ class MazeApp:
     方法名前的单下划线表示“主要供类内部使用”的约定，并不是权限限制。
     """
 
-    # 毫秒：500 ms = 0.5 s。它是两次预约之间的等待时间，不是速度控制模型。
+    # 毫秒：500 ms = 0.5 s，表示每次 after() 从预约到回调触发的约等待时间。
+    # 下一次预约是在本步移动和重画之后设置的，因此相邻两步的实际间隔还包含
+    # 这些处理耗时及事件循环可能带来的延迟；这不是实体机器人的速度控制模型。
     TICK_MS = 500
 
     def __init__(self, root):
@@ -65,7 +67,7 @@ class MazeApp:
         body = ttk.Frame(self.root, padding=18)
         body.grid(sticky="nsew")
         body.columnconfigure(0, weight=1)
-        # 第 4 行放画布，所以拉大窗口时主要让迷宫显示区域变大。
+        # row=4（从 0 开始计数）放画布，所以拉大窗口时主要让迷宫显示区域变大。
         body.rowconfigure(4, weight=1)
         ttk.Label(body, text="Flood Fill Maze Robot", style="Title.TLabel").grid(
             row=0, sticky="w"
@@ -250,9 +252,14 @@ class MazeApp:
                 # 西边仅在 x==0 时补画，北边仅在 y==0 时补画，补齐外边界。
                 for direction in DIRECTIONS:
                     dx, dy = direction
+                    # and 的优先级高于 or；下式等价于：
+                    # (dx == -1 and x != 0) or (dy == -1 and y != 0)。
+                    # 也就是跳过非最左列的西边，或非最上行的北边，避免重复画线。
                     if dx == -1 and x != 0 or dy == -1 and y != 0:
                         continue
                     state = self.sim.known.edge_state((x, y), direction)
+                    # 此处的 "open" / "wall" 与 maze.py 的 OPEN / WALL 常量
+                    # 分别是相同的字符串；这里直接写字符串进行比较。
                     # 已知开放边不画线；wall 画深色实线；unknown 画浅色虚线。
                     if state == "open":
                         continue
