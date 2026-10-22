@@ -1,4 +1,4 @@
-[English](README.md) | [Deutsch](README.de.md)
+[English](README.md) | [中文](README.zh.md) | [Deutsch](README.de.md)
 
 # Flood Fill Maze Robot
 
@@ -23,7 +23,7 @@ Maintainer: Lingan He. Mit KI-Unterstützung entwickelt.
 | `simulator.py` | Roboterzustand und Zyklus aus Wahrnehmung, Planung und Bewegung. |
 | `ui.py` | Tkinter-Visualisierung, Bedienelemente und Zeitsteuerung. |
 | `test_robot.py` | Verhaltenstests und unabhängige Dijkstra-Referenz. |
-| `README.md`, `README.de.md` | Englische und deutsche Dokumentation. |
+| `README.md`, `README.zh.md`, `README.de.md` | Englische, chinesische und deutsche Dokumentation. |
 | `LICENSE` | MIT-Lizenzbedingungen. |
 | `.gitignore` | Ausschluss lokaler Dateien und Python-Caches. |
 
